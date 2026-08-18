@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V2 COCO STORES MASTER DASHBOARD | Furlenco Retail Intelligence</title>
+    <meta name="description" content="V2 COCO STORES MASTER DASHBOARD - Real-time Retail KPI Analytics with MoM comparisons, conversion funnel, basket size, and store hub performance.">
+    <link rel="stylesheet" href="css/glass-theme.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <!-- Header & Navigation Bar -->
+    <header class="dashboard-header">
+        <div class="header-container">
+            
+            <!-- Top Row: Left Brand Info & Far Top-Right Furlenco Logo -->
+            <div class="header-top-row">
+                <div class="brand-section">
+                    <div class="brand-logo-badge">V2</div>
+                    <div class="brand-info">
+                        <h1>
+                            V2 COCO STORES MASTER DASHBOARD
+                            <span class="live-indicator"><span class="live-dot"></span> LIVE DSR</span>
+                        </h1>
+                        <div class="brand-subtitle">Furlenco COCO Retail Network • 25-Month Historical Performance Review</div>
+                    </div>
+                </div>
+
+                <!-- Top Right Corner Furlenco Brand Badge -->
+                <div class="brand-furlenco-badge" title="Furlenco Official Retail Network">
+                    <img src="assets/furlenco_logo.png" alt="Furlenco Logo" class="brand-furlenco-logo-img">
+                    <span class="brand-furlenco-text">Furlenco</span>
+                </div>
+            </div>
+
+            <!-- Controls Row -->
+            <div class="header-controls-row">
+                <!-- Primary Month -->
+                <div class="control-group">
+                    <span class="control-label">Month</span>
+                    <select id="selectedMonthSelect" class="glass-select" aria-label="Select Primary Month"></select>
+                </div>
+
+                <!-- Compare Mode -->
+                <div class="control-group" id="compareMonthGroup">
+                    <span class="control-label">vs.</span>
+                    <select id="compareMonthSelect" class="glass-select" aria-label="Select Comparison Month"></select>
+                </div>
+
+                <!-- Theme Toggle -->
+                <button id="themeToggleBtn" class="glass-btn" title="Toggle Glass Theme">
+                    <span>🌙</span><span>Dark Sapphire</span>
+                </button>
+
+                <!-- Export Data -->
+                <button class="glass-btn" onclick="exportDashboardCSV()" title="Export CSV Data">
+                    <span>📥</span><span>Export CSV</span>
+                </button>
+
+                <button class="glass-btn glass-btn-primary" onclick="window.print()" title="Print or Save PDF Report">
+                    <span>📄</span><span>Print Report</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Container -->
+    <main class="dashboard-body">
+
+        <!-- Time Horizon Quick Filters & Banner -->
+        <section class="glass-panel horizon-bar" aria-label="Time horizon bar">
+            <div class="horizon-pills">
+                <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); margin-right: 4px; text-transform: uppercase;">Trend Filter:</span>
+                <button class="horizon-pill active" data-horizon="current-fy">Current FY'27 (Apr - Aug)</button>
+                <button class="horizon-pill" data-horizon="3">Last 3M</button>
+                <button class="horizon-pill" data-horizon="6">Last 6M</button>
+                <button class="horizon-pill" data-horizon="12">Last 12M</button>
+                <button class="horizon-pill" data-horizon="25">Full 25M History</button>
+            </div>
+            <div id="comparisonContextBanner" class="comparison-banner">
+                <!-- Dynamically injected -->
+            </div>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs-container" aria-label="Dashboard subviews">
+            <button class="nav-tab-btn active" data-tab="overview">
+                <span class="tab-icon">📊</span> MOM Review & Overview
+            </button>
+            <button class="nav-tab-btn" data-tab="stores">
+                <span class="tab-icon">🏬</span> COCO Stores
+            </button>
+            <button class="nav-tab-btn" data-tab="channels">
+                <span class="tab-icon">📱</span> Channel Funnel
+            </button>
+            <button class="nav-tab-btn" data-tab="categories">
+                <span class="tab-icon">🛋️</span> Categories & Mix
+            </button>
+            <button class="nav-tab-btn" data-tab="cancellations">
+                <span class="tab-icon">⚠️</span> Cancellations & Economics
+            </button>
+        </nav>
+
+
+        <!-- TAB 1: MOM REVIEW & EXECUTIVE OVERVIEW -->
+        <div id="tabPane-overview" class="tab-content-pane">
+            
+            <!-- Hero KPI Grid (Sequential 8 Cards: Leads -> Conversions -> CVR% -> Revenue -> AOV -> Cancel Count -> Cancel Rate -> Cancel Revenue) -->
+            <section id="kpiHeroGrid" class="kpi-grid" aria-label="Executive Key Performance Indicators">
+                <!-- Injected dynamically via JavaScript -->
+            </section>
+
+            <!-- August MTD Daily Trajectory Strip -->
+            <section class="glass-panel" style="padding: 1.25rem; margin-top: 1.5rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>📅</span> August 2026 MTD Daily Revenue & Conversion Trajectory (Day 1 to 17)
+                    </div>
+                    <span style="font-size: 0.75rem; color: var(--text-secondary); background: rgba(0,229,255,0.1); padding: 3px 10px; border-radius: 99px; border: 1px solid rgba(0,229,255,0.2);">
+                        MTD Daily Run-Rate: ₹ 2.15 L/day
+                    </span>
+                </div>
+                <div id="dailyTrajectoryStrip" class="daily-strip">
+                    <!-- Daily blocks injected via JS -->
+                </div>
+            </section>
+
+            <!-- Charts Split: Financial Year Trend Line + Channel Doughnut -->
+            <div class="charts-split-grid" style="margin-top: 1.5rem;">
+                <div class="glass-panel chart-card">
+                    <div class="chart-card-header">
+                        <div class="chart-card-title">
+                            <span>📈</span> Financial Year Revenue & Lead Volume Trend (Apr'26 - Present)
+                        </div>
+                        <span style="font-size: 0.78rem; color: var(--text-muted);">Dual-Axis Scale</span>
+                    </div>
+                    <div class="chart-canvas-container">
+                        <canvas id="multiMonthTrendCanvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="glass-panel chart-card">
+                    <div class="chart-card-header">
+                        <div class="chart-card-title">
+                            <span>🍩</span> Channel Share (Walk-in, Video Call Leads, App Leads, Store Calls)
+                        </div>
+                        <span style="font-size: 0.78rem; color: var(--text-muted);">Current Month</span>
+                    </div>
+                    <div class="chart-canvas-container">
+                        <canvas id="channelMixCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MoM Comparison Matrix Table -->
+            <section class="glass-panel chart-card" style="margin-top: 1.5rem;">
+                <div class="chart-card-header">
+                    <div class="chart-card-title">
+                        <span>📑</span> Complete Month-over-Month (MOM) KPI Variance Matrix
+                    </div>
+                    <span style="font-size: 0.78rem; color: var(--text-secondary);">Automated $\Delta\%$ delta and absolute difference calculation</span>
+                </div>
+                <div class="matrix-table-container">
+                    <table class="matrix-table">
+                        <thead>
+                            <tr>
+                                <th>KPI Metric</th>
+                                <th>Selected Month</th>
+                                <th>Comparison Month</th>
+                                <th>MoM Growth / Variance</th>
+                                <th>Absolute $\Delta$</th>
+                            </tr>
+                        </thead>
+                        <tbody id="matrixTableBody">
+                            <!-- Injected via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- TAB 2: COCO STORES -->
+        <div id="tabPane-stores" class="tab-content-pane" style="display: none;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+                <div>
+                    <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.35rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>🏬</span> COCO Stores Performance
+                    </h2>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                        Live performance across 5 dedicated company-owned company-operated retail stores (HSR, HRBR, Kundalahalli, Kondapur, Noida) fetched from dedicated DSR sheets.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 5 COCO Store Cards (Displaying Total Leads, Total Conversions, CVR %, EBVMR_with_vas NET) -->
+            <div id="cocoStoresGrid" class="coco-grid-5">
+                <!-- Injected dynamically via JS -->
+            </div>
+
+            <!-- High Performing Stores Leaderboard / Ranking Section -->
+            <div style="margin-top: 2rem;">
+                <div class="kpi-section-heading" style="margin-bottom: 1rem;">
+                    <span>🏆</span> High Performing Stores Leaderboard & Ranking
+                </div>
+                <div id="cocoLeaderboardGrid" class="leaderboard-container">
+                    <!-- Injected dynamically via JS -->
+                </div>
+            </div>
+
+            <!-- Comparative Visualizations Grid -->
+            <div class="charts-split-grid" style="margin-top: 1.75rem;">
+                <!-- Store Revenue Comparison Bar Chart -->
+                <div class="glass-panel chart-card">
+                    <div class="chart-card-header">
+                        <div class="chart-card-title">
+                            <span>💎</span> Store Revenue Benchmark (EBVMR_with_vas NET)
+                        </div>
+                        <span style="font-size: 0.78rem; color: var(--text-muted);">Horizontal Store Comparison</span>
+                    </div>
+                    <div class="chart-canvas-container">
+                        <canvas id="cocoStoreBarCanvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- Store Conversion Efficiency Chart -->
+                <div class="glass-panel chart-card">
+                    <div class="chart-card-header">
+                        <div class="chart-card-title">
+                            <span>⚡</span> Conversion Rate (CVR %) vs Conversions
+                        </div>
+                        <span style="font-size: 0.78rem; color: var(--text-muted);">Efficiency Ratio</span>
+                    </div>
+                    <div class="chart-canvas-container">
+                        <canvas id="cocoStoreCvrCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- TAB 3: CHANNELS -->
+        <div id="tabPane-channels" class="tab-content-pane" style="display: none;">
+            <div style="margin-bottom: 1.25rem;">
+                <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.3rem; font-weight: 700;">
+                    📱 Channel Funnel & Conversion Efficiency
+                </h2>
+                <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                    Deep dive into Walk-in Store Visits, Video Call Leads (Pop-in), Mobile App Leads, and Store Direct Calling (GMB).
+                </p>
+            </div>
+            <div id="channelsGrid" class="sub-grid-3">
+                <!-- Injected via JS -->
+            </div>
+            <div class="glass-panel chart-card" style="margin-top: 1.5rem;">
+                <div class="chart-card-header">
+                    <div class="chart-card-title">
+                        <span>⚡</span> Conversion Rate (CVR %) vs Blended ARPU by Month
+                    </div>
+                </div>
+                <div class="chart-canvas-container">
+                    <canvas id="funnelChartCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: CATEGORIES & PRODUCT MIX -->
+        <div id="tabPane-categories" class="tab-content-pane" style="display: none;">
+            <div style="margin-bottom: 1.25rem;">
+                <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.3rem; font-weight: 700;">
+                    🛋️ Category & Sub-Category Product Intelligence
+                </h2>
+                <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                    Revenue contribution and sales mix across Bedroom, Living Room, Appliances, Dining, and Sub-Categories (Queen Bed, King Bed, Storage Bed, Sofas).
+                </p>
+            </div>
+            <div id="categoriesGrid" class="sub-grid-3">
+                <!-- Injected via JS -->
+            </div>
+        </div>
+
+        <!-- TAB 5: CANCELLATIONS & RISK -->
+        <div id="tabPane-cancellations" class="tab-content-pane" style="display: none;">
+            <div style="margin-bottom: 1.25rem;">
+                <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.3rem; font-weight: 700;">
+                    ⚠️ Cancellations, Churn & Unit Economics
+                </h2>
+                <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                    Monitoring revenue churn, Rental vs. Selling cancellation values, and unit level PPU (Products Per User).
+                </p>
+            </div>
+            <div class="glass-panel chart-card">
+                <div class="chart-card-header">
+                    <div class="chart-card-title">
+                        <span>📉</span> Monthly Cancelled Revenue by Stream (Rental vs. Selling)
+                    </div>
+                    <span style="font-size: 0.78rem; color: var(--text-secondary);">Value in ₹ Lakhs / Crores</span>
+                </div>
+                <div class="chart-canvas-container">
+                    <canvas id="cancelChartCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer style="text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--glass-border);">
+        V2 COCO STORES MASTER DASHBOARD • Furlenco Retail Intelligence • Real-time Spreadsheet Synchronization
+    </footer>
+
+    <!-- Load Structured Data & Dashboard Script -->
+    <script src="js/data.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
