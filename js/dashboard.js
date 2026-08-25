@@ -60,14 +60,98 @@ const formatters = {
     }
 };
 
+// Google Apps Script Web App URL — paste your deployed URL here after setup
+// See instructions: Extensions → Apps Script → Deploy → New Deployment → Web App
+const LIVE_API_URL = window.APPS_SCRIPT_URL || '';
+
 // Initialize Dashboard
 document.addEventListener("DOMContentLoaded", () => {
     initSelectors();
     initTheme();
     initTabs();
     initQuickFilters();
-    renderAllViews();
+
+    if (LIVE_API_URL && LIVE_API_URL !== '') {
+        // Live mode: fetch from Google Apps Script
+        loadLiveData();
+    } else {
+        // Fallback mode: use static data.js
+        renderAllViews();
+        showDataSourceBadge('static');
+    }
 });
+
+function loadLiveData() {
+    showLoadingOverlay(true);
+    fetch(LIVE_API_URL)
+        .then(r => r.json())
+        .then(liveData => {
+            if (liveData.error) throw new Error(liveData.error);
+            // Merge live data into RETAIL_DSR_DATA
+            RETAIL_DSR_DATA.monthlyData = liveData.monthlyData || RETAIL_DSR_DATA.monthlyData;
+            RETAIL_DSR_DATA.channels    = liveData.channels    || RETAIL_DSR_DATA.channels;
+            RETAIL_DSR_DATA.cocoStores  = liveData.cocoStores  || RETAIL_DSR_DATA.cocoStores;
+            if (liveData.months) RETAIL_DSR_DATA.months = liveData.months;
+            showLoadingOverlay(false);
+            renderAllViews();
+            showDataSourceBadge('live', liveData.lastUpdated);
+        })
+        .catch(err => {
+            console.warn('Live data fetch failed, falling back to static data:', err);
+            showLoadingOverlay(false);
+            renderAllViews();
+            showDataSourceBadge('fallback');
+        });
+}
+
+function showLoadingOverlay(show) {
+    let overlay = document.getElementById('dashLoadingOverlay');
+    if (show) {
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'dashLoadingOverlay';
+            overlay.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;gap:1rem;">
+                    <div style="width:44px;height:44px;border:3px solid rgba(0,229,255,0.2);border-top-color:#00e5ff;border-radius:50%;animation:spin 0.9s linear infinite;"></div>
+                    <div style="font-family:'Outfit',sans-serif;font-size:1rem;font-weight:600;color:#00e5ff;">Fetching live data from Google Sheets...</div>
+                    <div style="font-size:0.78rem;color:#64748b;">Real-time sync in progress</div>
+                </div>`;
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,20,40,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);';
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = 'flex';
+    } else {
+        if (overlay) overlay.style.display = 'none';
+    }
+}
+
+function showDataSourceBadge(mode, lastUpdated) {
+    let badge = document.getElementById('dataSourceBadge');
+    if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'dataSourceBadge';
+        badge.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:999;padding:6px 14px;border-radius:99px;font-size:0.72rem;font-weight:700;font-family:Outfit,sans-serif;backdrop-filter:blur(10px);border:1px solid;cursor:default;';
+        document.body.appendChild(badge);
+    }
+    if (mode === 'live') {
+        const t = lastUpdated ? new Date(lastUpdated).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) : '';
+        badge.innerHTML = `🟢 LIVE &nbsp;•&nbsp; Updated ${t}`;
+        badge.style.background = 'rgba(16,185,129,0.18)';
+        badge.style.borderColor = 'rgba(16,185,129,0.5)';
+        badge.style.color = '#10b981';
+    } else if (mode === 'fallback') {
+        badge.innerHTML = '🟡 Offline — showing last saved data';
+        badge.style.background = 'rgba(245,158,11,0.18)';
+        badge.style.borderColor = 'rgba(245,158,11,0.5)';
+        badge.style.color = '#f59e0b';
+    } else {
+        badge.innerHTML = '⚪ Static Data — connect Apps Script for live sync';
+        badge.style.background = 'rgba(100,116,139,0.18)';
+        badge.style.borderColor = 'rgba(100,116,139,0.4)';
+        badge.style.color = '#94a3b8';
+    }
+}
+
 
 function initSelectors() {
     const monthSelect = document.getElementById("selectedMonthSelect");
