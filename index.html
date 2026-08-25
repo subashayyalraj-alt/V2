@@ -92,7 +92,7 @@
                 <span class="tab-icon">🏬</span> COCO Stores
             </button>
             <button class="nav-tab-btn" data-tab="channels">
-                <span class="tab-icon">📱</span> Channel Funnel
+                <span class="tab-icon">📊</span> Leads Analysis
             </button>
             <button class="nav-tab-btn" data-tab="categories">
                 <span class="tab-icon">🛋️</span> Categories & Mix
@@ -239,30 +239,82 @@
         </div>
 
 
-        <!-- TAB 3: CHANNELS -->
+        <!-- TAB 3: LEADS ANALYSIS -->
         <div id="tabPane-channels" class="tab-content-pane" style="display: none;">
-            <div style="margin-bottom: 1.25rem;">
-                <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.3rem; font-weight: 700;">
-                    📱 Channel Funnel & Conversion Efficiency
-                </h2>
-                <p style="font-size: 0.85rem; color: var(--text-secondary);">
-                    Deep dive into Walk-in Store Visits, Video Call Leads (Pop-in), Mobile App Leads, and Store Direct Calling (GMB).
-                </p>
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:1.25rem; flex-wrap:wrap; gap:0.75rem;">
+                <div>
+                    <h2 style="font-family:'Outfit',sans-serif; font-size:1.35rem; font-weight:700; display:flex; align-items:center; gap:0.5rem;">
+                        <span>📊</span> Leads Analysis
+                    </h2>
+                    <p style="font-size:0.85rem; color:var(--text-secondary);">
+                        Deep-dive into each lead channel — Leads vs Conversions comparison, CVR % and Revenue performance for Walk-in, Video Call, App, IS, and Store Call channels.
+                    </p>
+                </div>
             </div>
-            <div id="channelsGrid" class="sub-grid-3">
-                <!-- Injected via JS -->
+
+            <!-- 5 Channel Cards Grid -->
+            <div id="channelsGrid" class="leads-channel-grid">
+                <!-- Injected dynamically via JS -->
             </div>
-            <div class="glass-panel chart-card" style="margin-top: 1.5rem;">
-                <div class="chart-card-header">
-                    <div class="chart-card-title">
-                        <span>⚡</span> Conversion Rate (CVR %) vs Blended ARPU by Month
+
+            <!-- Top Performing Channels Comparison Section -->
+            <div style="margin-top:2rem;">
+                <div class="kpi-section-heading" style="margin-bottom:1rem;">
+                    <span>🏆</span> Channel Performance Comparison — Top Performing Leads & Revenue
+                </div>
+
+                <!-- All channels grouped comparison charts -->
+                <div class="charts-split-grid">
+                    <!-- Leads vs Conversions Grouped Bar -->
+                    <div class="glass-panel chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title"><span>📥</span> Leads vs Conversions by Channel</div>
+                            <span style="font-size:0.78rem; color:var(--text-muted);">Current Month</span>
+                        </div>
+                        <div class="chart-canvas-container">
+                            <canvas id="leadsVsConvCanvas"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Revenue by Channel Horizontal Bar -->
+                    <div class="glass-panel chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title"><span>💰</span> Revenue by Channel</div>
+                            <span style="font-size:0.78rem; color:var(--text-muted);">Current Month</span>
+                        </div>
+                        <div class="chart-canvas-container">
+                            <canvas id="channelRevenueCanvas"></canvas>
+                        </div>
                     </div>
                 </div>
-                <div class="chart-canvas-container">
-                    <canvas id="funnelChartCanvas"></canvas>
+
+                <!-- CVR % Comparison across channels + Leads Funnel Mini-leaderboard -->
+                <div class="charts-split-grid" style="margin-top:1.25rem;">
+                    <!-- CVR % radar / bar -->
+                    <div class="glass-panel chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title"><span>⚡</span> CVR % (All LOBs) by Channel</div>
+                            <span style="font-size:0.78rem; color:var(--text-muted);">Conversion Efficiency</span>
+                        </div>
+                        <div class="chart-canvas-container">
+                            <canvas id="channelCvrCanvas"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Channel Leaderboard -->
+                    <div class="glass-panel chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title"><span>🥇</span> Channel Ranking — Revenue</div>
+                            <span style="font-size:0.78rem; color:var(--text-muted);">Top Performer</span>
+                        </div>
+                        <div id="channelLeaderboard" style="padding:0.5rem 0.25rem; display:flex; flex-direction:column; gap:0.65rem;">
+                            <!-- Injected via JS -->
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
+
 
         <!-- TAB 4: CATEGORIES & PRODUCT MIX -->
         <div id="tabPane-categories" class="tab-content-pane" style="display: none;">

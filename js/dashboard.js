@@ -943,55 +943,252 @@ function renderCocoVisualizations(storesList, m) {
 }
 
 
-// Render Channel Details (Walk-in, Video Call Leads, App Leads, Store Calls)
+// Leads Analysis — 5 channel cards + comparison charts + leaderboard
 function renderChannels() {
     const container = document.getElementById("channelsGrid");
     if (!container) return;
 
     const m = state.selectedMonth;
     const prevM = state.compareMonth;
-    let html = "";
 
-    const channelDisplay = [
-        { key: "walkin", label: "Walk-in (Offline Stores)", icon: "🏬" },
-        { key: "popin", label: "Video Call Leads (Pop-in)", icon: "📹" },
-        { key: "app_lead", label: "App Leads (Mobile & D2C)", icon: "📱" },
-        { key: "store_calls", label: "Store Calls (GMB Calling)", icon: "📞" }
+    const channelDefs = [
+        { key: "walkin",      label: "Walk-in",          icon: "🏬", color: "#00e5ff" },
+        { key: "popin",       label: "Video Call Leads",  icon: "📹", color: "#0077ff" },
+        { key: "app_lead",    label: "App Leads",         icon: "📱", color: "#38bdf8" },
+        { key: "is_leads",    label: "IS Leads",          icon: "🎧", color: "#818cf8" },
+        { key: "store_calls", label: "Store Calls",       icon: "📞", color: "#10b981" }
     ];
 
-    channelDisplay.forEach(chItem => {
-        const ch = RETAIL_DSR_DATA.channels[chItem.key];
-        if (!ch) return;
+    let html = "";
 
-        const curr = ch.monthly[m] || { sales: 0, revenue: 0, arpu: 0, cvr: 0, upsell: 0, upsell_rev: 0, cancel_count: 0 };
-        const prev = ch.monthly[prevM] || { sales: 0, revenue: 0, arpu: 0, cvr: 0 };
-        const delta = formatters.deltaPercent(curr.revenue, prev.revenue);
+    channelDefs.forEach(chDef => {
+        const ch = RETAIL_DSR_DATA.channels?.[chDef.key];
+        const curr = ch?.monthly?.[m]  || { leads: 0, conversions: 0, cvr: 0, revenue: 0, arpu: 0 };
+        const prev = ch?.monthly?.[prevM] || { leads: 0, conversions: 0, cvr: 0, revenue: 0 };
+
+        const deltaLeads = formatters.deltaPercent(curr.leads, prev.leads);
+        const deltaConv  = formatters.deltaPercent(curr.conversions, prev.conversions);
+        const deltaCvr   = formatters.deltaPercent(curr.cvr, prev.cvr);
+        const deltaRev   = formatters.deltaPercent(curr.revenue, prev.revenue);
+
+        // Leads vs conversions bar widths
+        const maxBar = Math.max(curr.leads, 1);
+        const convWidth = Math.min(100, Math.round((curr.conversions / maxBar) * 100));
+        const leadsWidth = 100;
 
         html += `
-            <div class="glass-panel sub-item-card">
-                <div class="item-header">
-                    <span class="item-name">${chItem.icon} ${chItem.label}</span>
-                    <span class="delta-badge ${delta.isPositive ? 'delta-positive' : 'delta-negative'}">${delta.text}</span>
+            <div class="glass-panel leads-channel-card" style="border-top: 3px solid ${chDef.color};">
+                <!-- Header -->
+                <div class="leads-channel-header">
+                    <div class="leads-channel-title">
+                        <span style="font-size:1.4rem;">${chDef.icon}</span>
+                        <span class="leads-channel-name">${chDef.label}</span>
+                    </div>
+                    <span class="delta-badge ${deltaRev.isPositive ? 'delta-positive' : 'delta-negative'}" title="MoM Revenue Change">
+                        ${deltaRev.isPositive ? '▲' : '▼'} ${deltaRev.text}
+                    </span>
                 </div>
-                <div class="item-stat-row">
-                    <span class="item-stat-label">Channel Revenue</span>
-                    <span class="item-stat-val" style="color: var(--color-brand-cyan); font-size: 1.1rem;">${formatters.currency(curr.revenue)}</span>
+
+                <!-- Leads vs Conversions Visual Bar -->
+                <div class="leads-funnel-visual">
+                    <div class="funnel-row">
+                        <span class="funnel-label">Leads</span>
+                        <div class="funnel-bar-track">
+                            <div class="funnel-bar-fill" style="width:${leadsWidth}%; background: ${chDef.color}44;"></div>
+                        </div>
+                        <div class="funnel-val-group">
+                            <span class="funnel-value" style="color:${chDef.color};">${formatters.number(curr.leads)}</span>
+                            <span class="delta-badge ${deltaLeads.isPositive ? 'delta-positive' : 'delta-negative'}" style="font-size:0.65rem; padding:1px 5px;">${deltaLeads.text}</span>
+                        </div>
+                    </div>
+                    <div class="funnel-arrow">↓ ${formatters.percent(curr.cvr)} CVR</div>
+                    <div class="funnel-row">
+                        <span class="funnel-label">Conversions</span>
+                        <div class="funnel-bar-track">
+                            <div class="funnel-bar-fill" style="width:${convWidth}%; background: ${chDef.color};"></div>
+                        </div>
+                        <div class="funnel-val-group">
+                            <span class="funnel-value">${formatters.number(curr.conversions)}</span>
+                            <span class="delta-badge ${deltaConv.isPositive ? 'delta-positive' : 'delta-negative'}" style="font-size:0.65rem; padding:1px 5px;">${deltaConv.text}</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="item-stat-row">
-                    <span class="item-stat-label">Sales Count</span>
-                    <span class="item-stat-val">${formatters.number(curr.sales)}</span>
+
+                <!-- KPI Row: CVR + Revenue -->
+                <div class="leads-kpi-row">
+                    <div class="leads-kpi-box">
+                        <div class="leads-kpi-box-label">CVR %</div>
+                        <div class="leads-kpi-box-val" style="color:${chDef.color};">${formatters.percent(curr.cvr)}</div>
+                        <div class="delta-badge ${deltaCvr.isPositive ? 'delta-positive' : 'delta-negative'}" style="font-size:0.65rem; padding:1px 5px; margin-top:2px;">${deltaCvr.text}</div>
+                    </div>
+                    <div class="leads-kpi-box">
+                        <div class="leads-kpi-box-label">Revenue</div>
+                        <div class="leads-kpi-box-val" style="color:var(--color-brand-cyan); font-size:1rem;">${formatters.currency(curr.revenue)}</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">ARPU: ${formatters.currency(curr.arpu)}</div>
+                    </div>
                 </div>
-                <div class="item-stat-row">
-                    <span class="item-stat-label">Channel ARPU</span>
-                    <span class="item-stat-val">${formatters.currency(curr.arpu)}</span>
-                </div>
-                <div class="item-stat-row">
-                    <span class="item-stat-label">Channel CVR %</span>
-                    <span class="item-stat-val">${formatters.percent(curr.cvr)}</span>
-                </div>
-                <div class="item-stat-row">
-                    <span class="item-stat-label">Upsell Revenue</span>
-                    <span class="item-stat-val">${formatters.currency(curr.upsell_rev)} (${curr.upsell} items)</span>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+
+    // Render the 3 comparison charts + leaderboard
+    renderLeadsComparisonCharts(channelDefs, m, prevM);
+    renderChannelLeaderboard(channelDefs, m);
+}
+
+function renderLeadsComparisonCharts(channelDefs, m, prevM) {
+    const isLight = state.theme === "light-ice";
+    const gridColor = isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
+    const textColor = isLight ? "#475569" : "#94a3b8";
+
+    const labels  = channelDefs.map(c => c.label);
+    const colors  = channelDefs.map(c => c.color);
+    const leadsD  = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.leads || 0);
+    const convD   = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.conversions || 0);
+    const cvrD    = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.cvr || 0);
+    const revD    = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.revenue || 0);
+
+    // 1. Leads vs Conversions grouped bar
+    const lvcCtx = document.getElementById("leadsVsConvCanvas")?.getContext("2d");
+    if (lvcCtx) {
+        if (state.charts.leadsVsConv) state.charts.leadsVsConv.destroy();
+        state.charts.leadsVsConv = new Chart(lvcCtx, {
+            type: "bar",
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: "Total Leads",
+                        data: leadsD,
+                        backgroundColor: colors.map(c => c + "55"),
+                        borderColor: colors,
+                        borderWidth: 1.5,
+                        borderRadius: 6
+                    },
+                    {
+                        label: "Conversions",
+                        data: convD,
+                        backgroundColor: colors.map(c => c + "cc"),
+                        borderRadius: 6
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: textColor, font: { family: "Outfit" } } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${formatters.number(ctx.parsed.y)}` } }
+                },
+                scales: {
+                    x: { grid: { color: gridColor }, ticks: { color: textColor } },
+                    y: { grid: { color: gridColor }, ticks: { color: textColor } }
+                }
+            }
+        });
+    }
+
+    // 2. Revenue by channel (horizontal bar)
+    const revCtx = document.getElementById("channelRevenueCanvas")?.getContext("2d");
+    if (revCtx) {
+        if (state.charts.channelRevenue) state.charts.channelRevenue.destroy();
+        state.charts.channelRevenue = new Chart(revCtx, {
+            type: "bar",
+            data: {
+                labels,
+                datasets: [{
+                    label: "Revenue (₹)",
+                    data: revD,
+                    backgroundColor: colors.map(c => c + "cc"),
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                indexAxis: "y",
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: ctx => ` Revenue: ${formatters.currency(ctx.parsed.x)}` } }
+                },
+                scales: {
+                    x: { grid: { color: gridColor }, ticks: { color: textColor, callback: v => formatters.currency(v) } },
+                    y: { grid: { color: gridColor }, ticks: { color: textColor, font: { family: "Outfit", weight: 600 } } }
+                }
+            }
+        });
+    }
+
+    // 3. CVR % bar chart
+    const cvrCtx = document.getElementById("channelCvrCanvas")?.getContext("2d");
+    if (cvrCtx) {
+        if (state.charts.channelCvr) state.charts.channelCvr.destroy();
+        state.charts.channelCvr = new Chart(cvrCtx, {
+            type: "bar",
+            data: {
+                labels,
+                datasets: [{
+                    label: "CVR % (All LOBs)",
+                    data: cvrD,
+                    backgroundColor: colors.map(c => c + "99"),
+                    borderColor: colors,
+                    borderWidth: 1.5,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: ctx => ` CVR: ${ctx.parsed.y}%` } }
+                },
+                scales: {
+                    x: { grid: { color: gridColor }, ticks: { color: textColor } },
+                    y: { grid: { color: gridColor }, ticks: { color: textColor, callback: v => `${v}%` } }
+                }
+            }
+        });
+    }
+}
+
+function renderChannelLeaderboard(channelDefs, m) {
+    const container = document.getElementById("channelLeaderboard");
+    if (!container) return;
+
+    const ranked = [...channelDefs].sort((a, b) => {
+        const rA = RETAIL_DSR_DATA.channels?.[a.key]?.monthly?.[m]?.revenue || 0;
+        const rB = RETAIL_DSR_DATA.channels?.[b.key]?.monthly?.[m]?.revenue || 0;
+        return rB - rA;
+    });
+
+    const topRev = RETAIL_DSR_DATA.channels?.[ranked[0]?.key]?.monthly?.[m]?.revenue || 1;
+
+    const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+
+    let html = "";
+    ranked.forEach((ch, idx) => {
+        const data = RETAIL_DSR_DATA.channels?.[ch.key]?.monthly?.[m] || {};
+        const rev  = data.revenue || 0;
+        const cvr  = data.cvr || 0;
+        const leads = data.leads || 0;
+        const conv = data.conversions || 0;
+        const pct  = Math.min(100, Math.round((rev / topRev) * 100));
+
+        html += `
+            <div style="display:flex; align-items:center; gap:0.75rem; padding:0.55rem 0.35rem; border-bottom:1px solid rgba(255,255,255,0.04);">
+                <span style="font-size:1.2rem; flex-shrink:0;">${medals[idx]}</span>
+                <div style="flex:1;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+                        <span style="font-family:'Outfit',sans-serif; font-weight:700; font-size:0.9rem; color:${ch.color};">${ch.icon} ${ch.label}</span>
+                        <span style="font-weight:700; font-size:0.88rem; color:var(--color-brand-cyan);">${formatters.currency(rev)}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.74rem; color:var(--text-muted); margin-bottom:4px;">
+                        <span>${formatters.number(conv)} conv / ${formatters.number(leads)} leads</span>
+                        <span>CVR: <strong style="color:var(--text-secondary);">${formatters.percent(cvr)}</strong></span>
+                    </div>
+                    <div style="height:3px; background:rgba(255,255,255,0.07); border-radius:99px; overflow:hidden;">
+                        <div style="height:100%; width:${pct}%; background:linear-gradient(90deg,${ch.color},${ch.color}99); border-radius:99px;"></div>
+                    </div>
                 </div>
             </div>
         `;
@@ -999,6 +1196,7 @@ function renderChannels() {
 
     container.innerHTML = html;
 }
+
 
 // Render Categories & Products
 function renderCategories() {
