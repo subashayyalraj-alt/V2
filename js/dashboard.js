@@ -51,15 +51,34 @@ function getOverviewMonthly(m) {
 }
 
 function getStoreMonthly(store, m) {
-    if (!store || !store.monthly) return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
-    if (store.monthly[m]) return store.monthly[m];
+    if (!store || !store.monthly) return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0, isFallback: false };
+    
+    // 1. Direct match with non-zero check
+    if (store.monthly[m] && (store.monthly[m].leads > 0 || store.monthly[m].conversions > 0 || store.monthly[m].ebvmr_net > 0)) {
+        return { ...store.monthly[m], monthLabel: m, isFallback: false };
+    }
+    
+    // 2. Normalized match (e.g. July'26 <-> Jul'26)
     const targetNorm = normalizeMonth(m);
     for (const k of Object.keys(store.monthly)) {
-        if (normalizeMonth(k) === targetNorm) {
-            return store.monthly[k];
+        if (normalizeMonth(k) === targetNorm && (store.monthly[k].leads > 0 || store.monthly[k].conversions > 0 || store.monthly[k].ebvmr_net > 0)) {
+            return { ...store.monthly[k], monthLabel: k, isFallback: false };
         }
     }
-    return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
+
+    // 3. Fallback to latest populated month in that store
+    const availableMonths = Object.keys(store.monthly).filter(k => {
+        const d = store.monthly[k];
+        return d && (d.leads > 0 || d.conversions > 0 || d.ebvmr_net > 0);
+    });
+
+    if (availableMonths.length > 0) {
+        availableMonths.sort((a, b) => parseMonthToDate(b) - parseMonthToDate(a));
+        const latestPopulated = availableMonths[0];
+        return { ...store.monthly[latestPopulated], monthLabel: latestPopulated, isFallback: true };
+    }
+
+    return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0, monthLabel: m, isFallback: false };
 }
 
 function getChannelMonthly(ch, m) {
@@ -168,14 +187,11 @@ function loadLiveData() {
 
             if (sortedMonths.length > 0) {
                 RETAIL_DSR_DATA.months = sortedMonths;
-                // Auto-select latest month (e.g. Sep'26) and previous month
                 state.selectedMonth = sortedMonths[sortedMonths.length - 1];
                 state.compareMonth = sortedMonths.length > 1 ? sortedMonths[sortedMonths.length - 2] : sortedMonths[0];
             }
 
-            // Re-populate dropdown selectors with the complete months list
             initSelectors();
-
             showLoadingOverlay(false);
             renderAllViews();
             showDataSourceBadge('live', liveData.lastUpdated);
@@ -244,7 +260,6 @@ function initSelectors() {
 
     if (!monthSelect || !compareSelect || !RETAIL_DSR_DATA || !RETAIL_DSR_DATA.months) return;
 
-    // Populate months in reverse chronological order (latest on top)
     const reversedMonths = [...RETAIL_DSR_DATA.months].reverse();
     
     monthSelect.innerHTML = "";
@@ -387,7 +402,7 @@ function renderHeroKPIs() {
             val: currData.leads,
             prevVal: prevData.leads,
             formatter: formatters.number,
-            badgeStyle: "default"
+            isCurrency: false
         },
         {
             key: "conversions",
@@ -396,7 +411,7 @@ function renderHeroKPIs() {
             val: currData.conversions,
             prevVal: prevData.conversions,
             formatter: formatters.number,
-            badgeStyle: "default"
+            isCurrency: false
         },
         {
             key: "cvr",
@@ -405,7 +420,7 @@ function renderHeroKPIs() {
             val: currData.cvr,
             prevVal: prevData.cvr,
             formatter: formatters.percent,
-            badgeStyle: "percent"
+            isCurrency: false
         },
         {
             key: "ebvmr_net",
@@ -415,7 +430,7 @@ function renderHeroKPIs() {
             prevVal: prevData.ebvmr_net,
             formatter: formatters.currency,
             highlight: true,
-            badgeStyle: "default",
+            isCurrency: true,
             meta: meta
         },
         {
@@ -425,7 +440,7 @@ function renderHeroKPIs() {
             val: currData.aov_overall,
             prevVal: prevData.aov_overall,
             formatter: formatters.currency,
-            badgeStyle: "default"
+            isCurrency: true
         },
         {
             key: "cancel_count",
@@ -435,7 +450,7 @@ function renderHeroKPIs() {
             prevVal: prevData.cancel_count,
             formatter: formatters.number,
             reverseColor: true,
-            badgeStyle: "default"
+            isCurrency: false
         },
         {
             key: "cancel_pct",
@@ -445,7 +460,7 @@ function renderHeroKPIs() {
             prevVal: prevData.cancel_pct,
             formatter: formatters.percent,
             reverseColor: true,
-            badgeStyle: "percent"
+            isCurrency: false
         },
         {
             key: "cancel_rev",
@@ -455,7 +470,7 @@ function renderHeroKPIs() {
             prevVal: prevData.cancel_rev,
             formatter: formatters.currency,
             reverseColor: true,
-            badgeStyle: "default"
+            isCurrency: true
         }
     ];
 
@@ -466,37 +481,45 @@ function renderHeroKPIs() {
         if (card.reverseColor) {
             deltaClass = delta.isPositive ? "delta-negative" : "delta-positive";
         }
-        if (delta.isZero) deltaClass = "";
+        if (delta.isZero) deltaClass = "delta-neutral";
+
+        // Correct formatting: ONLY currency KPIs get ₹
+        const formattedPrev = card.isCurrency 
+            ? formatters.currency(card.prevVal || 0) 
+            : card.formatter(card.prevVal || 0);
 
         let extraMetaHtml = "";
         if (card.meta && card.meta.trending_to) {
+            const pctFill = Math.min(100, Math.round((card.val / card.meta.trending_to) * 100));
             extraMetaHtml = `
-                <div class="kpi-progress-bar">
-                    <div class="kpi-progress-fill" style="width: ${Math.min(100, Math.round((card.val / card.meta.trending_to) * 100))}%;"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-muted); margin-top:4px;">
-                    <span>Trending to: ${formatters.currency(card.meta.trending_to)}</span>
-                    <span>Deficit: ${card.meta.deficit_pct}%</span>
+                <div class="target-progress-container">
+                    <div class="target-label-row">
+                        <span>Trending: ${formatters.currency(card.meta.trending_to)}</span>
+                        <span>Deficit: ${card.meta.deficit_pct}%</span>
+                    </div>
+                    <div class="target-progress-track">
+                        <div class="target-progress-fill" style="width: ${pctFill}%;"></div>
+                    </div>
                 </div>
             `;
         }
 
         html += `
             <div class="glass-panel kpi-card">
-                <div class="kpi-header">
-                    <div class="kpi-title-group">
-                        <div class="kpi-icon">${card.icon}</div>
+                <div class="kpi-card-header">
+                    <div style="display:flex; align-items:center; gap:0.6rem;">
+                        <div class="kpi-icon-pill">${card.icon}</div>
                         <div class="kpi-title">${card.title}</div>
                     </div>
                     <span class="delta-badge ${deltaClass}">
                         ${delta.isPositive ? '▲' : '▼'} ${delta.text}
                     </span>
                 </div>
-                <div class="kpi-value ${card.highlight ? 'highlight-val' : ''}">
+                <div class="kpi-main-val ${card.highlight ? 'highlight-val' : ''}">
                     ${card.formatter(card.val)}
                 </div>
-                <div class="kpi-comparison-sub">
-                    vs. ${formatters.exactCurrency(card.prevVal || 0)} in ${state.compareMonth}
+                <div class="kpi-footer">
+                    <span class="kpi-prev-val">vs. ${formattedPrev} in ${state.compareMonth}</span>
                 </div>
                 ${extraMetaHtml}
             </div>
@@ -559,20 +582,35 @@ function renderMatrixTable() {
     tbody.innerHTML = rowsHtml;
 }
 
-// Render August Daily Trajectory Strip
+// Render Daily Revenue & Conversion Trajectory
 function renderDailyAugust() {
     const container = document.getElementById("dailyTrajectoryStrip");
     if (!container || !RETAIL_DSR_DATA.dailyAug) return;
 
+    let maxRev = 1;
+    RETAIL_DSR_DATA.dailyAug.forEach(d => {
+        if (d.revenue > maxRev) maxRev = d.revenue;
+    });
+
     let html = "";
     RETAIL_DSR_DATA.dailyAug.forEach(d => {
+        const isWeekend = d.dow === "Sat" || d.dow === "Sun";
+        const pctFill = Math.min(100, Math.round((d.revenue / maxRev) * 100));
+
         html += `
-            <div class="daily-item">
-                <span class="daily-date">Aug ${d.day}</span>
-                <span class="daily-dow">${d.dow}</span>
-                <span class="daily-rev">${formatters.currency(d.revenue)}</span>
-                <span class="daily-conv">${d.conversions} orders</span>
-                <span class="daily-cvr">${Number(d.cvr).toFixed(1)}% CVR</span>
+            <div class="daily-block ${isWeekend ? 'weekend' : ''}">
+                <div class="daily-header-row">
+                    <span class="daily-date">Day ${d.day}</span>
+                    <span class="daily-dow-badge">${d.dow}</span>
+                </div>
+                <div class="daily-rev">${formatters.currency(d.revenue)}</div>
+                <div class="daily-stats-row">
+                    <span>${d.conversions} orders</span>
+                    <span class="daily-cvr-pill">${Number(d.cvr).toFixed(1)}% CVR</span>
+                </div>
+                <div class="daily-mini-track">
+                    <div class="daily-mini-fill" style="width:${pctFill}%;"></div>
+                </div>
             </div>
         `;
     });
@@ -591,10 +629,9 @@ function renderCharts() {
 function getFilteredMonths() {
     const allMonths = RETAIL_DSR_DATA.months || [];
     if (state.timeHorizon === "current-fy") {
-        // Dynamic: all months from April 2026 onwards
         const fyMonths = allMonths.filter(m => {
             const d = parseMonthToDate(m);
-            return d >= new Date(2026, 3, 1); // 2026-04-01 onwards
+            return d >= new Date(2026, 3, 1);
         });
         if (fyMonths.length > 0) return fyMonths;
         return allMonths.slice(-6);
@@ -912,12 +949,18 @@ function renderCocoStores() {
         const deltaCvr = formatters.deltaPercent(curr.cvr, prev.cvr);
         const deltaRev = formatters.deltaPercent(curr.ebvmr_net, prev.ebvmr_net);
 
+        let fallbackBadge = "";
+        if (curr.isFallback) {
+            fallbackBadge = `<span class="coco-tab-badge" style="color:#f59e0b; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3);">Showing: ${curr.monthLabel} (Sep MTD pending)</span>`;
+        }
+
         cardsHtml += `
             <div class="glass-panel coco-store-card">
                 <div class="coco-store-header">
                     <div>
                         <div class="coco-store-name">🏬 ${store.name}</div>
                         <div class="coco-tab-badge">Tab: ${store.tab} • ${store.city}</div>
+                        ${fallbackBadge}
                     </div>
                     <span class="delta-badge ${deltaRev.isPositive ? 'delta-positive' : 'delta-negative'}" title="MoM Net Revenue Growth">
                         ${deltaRev.isPositive ? '▲' : '▼'} ${deltaRev.text}
