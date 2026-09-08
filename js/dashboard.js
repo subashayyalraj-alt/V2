@@ -1,18 +1,78 @@
 /**
  * V2 COCO STORES MASTER DASHBOARD Controller
- * Handles MoM comparisons, Financial Year filtering, Chart.js instances, and responsive interactions.
+ * Handles live Google Sheets sync, MoM comparisons, Financial Year filtering, Chart.js instances, and responsive interactions.
  */
 
 // State Object
 const state = {
-    selectedMonth: "Aug'26",
-    compareMonth: "July'26",
+    selectedMonth: "Sep'26",
+    compareMonth: "Aug'26",
     compareMode: "mom", // "mom" | "target" | "custom"
     timeHorizon: "current-fy", // "current-fy" | 3 | 6 | 12 | 25
     activeTab: "overview",
     theme: "dark-sapphire",
     charts: {}
 };
+
+// Month Normalization & Parsing Utilities
+function normalizeMonth(m) {
+    if (!m) return "";
+    let s = String(m).trim();
+    s = s.replace(/July'/i, "Jul'").replace(/June'/i, "Jun'").replace(/April'/i, "Apr'").replace(/Sept'/i, "Sep'");
+    return s;
+}
+
+function parseMonthToDate(mStr) {
+    if (!mStr) return new Date(0);
+    const norm = normalizeMonth(mStr);
+    const match = norm.match(/([A-Za-z]+)'?(\d{2,4})/);
+    if (!match) return new Date(0);
+    const monMap = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
+    const mon = monMap[match[1].toLowerCase().slice(0, 3)] ?? 0;
+    let yr = parseInt(match[2], 10);
+    if (yr < 100) yr += 2000;
+    return new Date(yr, mon, 1);
+}
+
+// Data Lookups with Normalization Fallback
+function getOverviewMonthly(m) {
+    if (!RETAIL_DSR_DATA || !RETAIL_DSR_DATA.monthlyData) return { metrics: {} };
+    if (RETAIL_DSR_DATA.monthlyData[m]) return RETAIL_DSR_DATA.monthlyData[m];
+    const targetNorm = normalizeMonth(m);
+    for (const k of Object.keys(RETAIL_DSR_DATA.monthlyData)) {
+        if (normalizeMonth(k) === targetNorm) {
+            return RETAIL_DSR_DATA.monthlyData[k];
+        }
+    }
+    return { metrics: {} };
+}
+
+function getStoreMonthly(store, m) {
+    if (!store || !store.monthly) return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
+    if (store.monthly[m]) return store.monthly[m];
+    const targetNorm = normalizeMonth(m);
+    for (const k of Object.keys(store.monthly)) {
+        if (normalizeMonth(k) === targetNorm) {
+            return store.monthly[k];
+        }
+    }
+    return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
+}
+
+function getChannelMonthly(ch, m) {
+    if (!ch || !ch.monthly) return { leads: 0, conversions: 0, cvr: 0, revenue: 0, arpu: 0, sales: 0 };
+    if (ch.monthly[m]) return ch.monthly[m];
+    const targetNorm = normalizeMonth(m);
+    for (const k of Object.keys(ch.monthly)) {
+        if (normalizeMonth(k) === targetNorm) {
+            return ch.monthly[k];
+        }
+    }
+    return { leads: 0, conversions: 0, cvr: 0, revenue: 0, arpu: 0, sales: 0 };
+}
 
 // Formatting Utilities
 const formatters = {
@@ -60,22 +120,19 @@ const formatters = {
     }
 };
 
-// Google Apps Script Web App URL — paste your deployed URL here after setup
-// See instructions: Extensions → Apps Script → Deploy → New Deployment → Web App
+// Google Apps Script Web App URL
 const LIVE_API_URL = window.APPS_SCRIPT_URL || '';
 
 // Initialize Dashboard
 document.addEventListener("DOMContentLoaded", () => {
-    initSelectors();
     initTheme();
     initTabs();
     initQuickFilters();
 
     if (LIVE_API_URL && LIVE_API_URL !== '') {
-        // Live mode: fetch from Google Apps Script
         loadLiveData();
     } else {
-        // Fallback mode: use static data.js
+        initSelectors();
         renderAllViews();
         showDataSourceBadge('static');
     }
@@ -87,11 +144,38 @@ function loadLiveData() {
         .then(r => r.json())
         .then(liveData => {
             if (liveData.error) throw new Error(liveData.error);
+
             // Merge live data into RETAIL_DSR_DATA
             RETAIL_DSR_DATA.monthlyData = liveData.monthlyData || RETAIL_DSR_DATA.monthlyData;
             RETAIL_DSR_DATA.channels    = liveData.channels    || RETAIL_DSR_DATA.channels;
             RETAIL_DSR_DATA.cocoStores  = liveData.cocoStores  || RETAIL_DSR_DATA.cocoStores;
-            if (liveData.months) RETAIL_DSR_DATA.months = liveData.months;
+
+            // Collect and sort all months chronologically
+            const allMonthsSet = new Set();
+            if (Array.isArray(liveData.months)) {
+                liveData.months.forEach(m => allMonthsSet.add(m));
+            }
+            if (liveData.monthlyData) {
+                Object.keys(liveData.monthlyData).forEach(m => allMonthsSet.add(m));
+            }
+            if (RETAIL_DSR_DATA.months) {
+                RETAIL_DSR_DATA.months.forEach(m => allMonthsSet.add(m));
+            }
+
+            const sortedMonths = Array.from(allMonthsSet).sort((a, b) => {
+                return parseMonthToDate(a) - parseMonthToDate(b);
+            });
+
+            if (sortedMonths.length > 0) {
+                RETAIL_DSR_DATA.months = sortedMonths;
+                // Auto-select latest month (e.g. Sep'26) and previous month
+                state.selectedMonth = sortedMonths[sortedMonths.length - 1];
+                state.compareMonth = sortedMonths.length > 1 ? sortedMonths[sortedMonths.length - 2] : sortedMonths[0];
+            }
+
+            // Re-populate dropdown selectors with the complete months list
+            initSelectors();
+
             showLoadingOverlay(false);
             renderAllViews();
             showDataSourceBadge('live', liveData.lastUpdated);
@@ -99,6 +183,7 @@ function loadLiveData() {
         .catch(err => {
             console.warn('Live data fetch failed, falling back to static data:', err);
             showLoadingOverlay(false);
+            initSelectors();
             renderAllViews();
             showDataSourceBadge('fallback');
         });
@@ -152,15 +237,14 @@ function showDataSourceBadge(mode, lastUpdated) {
     }
 }
 
-
 function initSelectors() {
     const monthSelect = document.getElementById("selectedMonthSelect");
     const compareSelect = document.getElementById("compareMonthSelect");
     const compareModeSelect = document.getElementById("compareModeSelect");
 
-    if (!monthSelect || !RETAIL_DSR_DATA || !RETAIL_DSR_DATA.months) return;
+    if (!monthSelect || !compareSelect || !RETAIL_DSR_DATA || !RETAIL_DSR_DATA.months) return;
 
-    // Populate months in reverse chronological order
+    // Populate months in reverse chronological order (latest on top)
     const reversedMonths = [...RETAIL_DSR_DATA.months].reverse();
     
     monthSelect.innerHTML = "";
@@ -180,7 +264,7 @@ function initSelectors() {
         compareSelect.appendChild(opt2);
     });
 
-    monthSelect.addEventListener("change", (e) => {
+    monthSelect.onchange = (e) => {
         state.selectedMonth = e.target.value;
         const currentIdx = RETAIL_DSR_DATA.months.indexOf(state.selectedMonth);
         if (currentIdx > 0 && state.compareMode === "mom") {
@@ -188,22 +272,22 @@ function initSelectors() {
             compareSelect.value = state.compareMonth;
         }
         renderAllViews();
-    });
+    };
 
-    compareSelect.addEventListener("change", (e) => {
+    compareSelect.onchange = (e) => {
         state.compareMonth = e.target.value;
         renderAllViews();
-    });
+    };
 
     if (compareModeSelect) {
-        compareModeSelect.addEventListener("change", (e) => {
+        compareModeSelect.onchange = (e) => {
             state.compareMode = e.target.value;
             const compGroup = document.getElementById("compareMonthGroup");
             if (compGroup) {
                 compGroup.style.display = state.compareMode === "target" ? "none" : "flex";
             }
             renderAllViews();
-        });
+        };
     }
 }
 
@@ -267,7 +351,6 @@ function renderAllViews() {
     renderCategories();
 }
 
-
 function updateContextBanner() {
     const banner = document.getElementById("comparisonContextBanner");
     if (!banner) return;
@@ -284,128 +367,138 @@ function updateContextBanner() {
     `;
 }
 
-// Render Executive Hero KPI Cards (Single Unified Grid in Exact Requested Order)
+// Render Executive Hero KPI Cards
 function renderHeroKPIs() {
     const container = document.getElementById("kpiHeroGrid");
     if (!container) return;
 
-    const currData = RETAIL_DSR_DATA.monthlyData[state.selectedMonth]?.metrics || {};
-    const prevData = RETAIL_DSR_DATA.monthlyData[state.compareMonth]?.metrics || {};
-    const meta = RETAIL_DSR_DATA.monthlyData[state.selectedMonth]?.meta;
+    const currData = getOverviewMonthly(state.selectedMonth).metrics || {};
+    const prevData = getOverviewMonthly(state.compareMonth).metrics || {};
+    const meta = getOverviewMonthly(state.selectedMonth).meta;
 
     // Requested Sequential Order:
-    // 1. Total Leads
-    // 2. Total Conversions
-    // 3. Conversion Rate (CVR)
-    // 4. Net EBVMR / Revenue
-    // 5. Average Order Value (AOV)
-    // 6. Cancellation Count
-    // 7. Cancellation Rate (%)
-    // 8. Cancelled Revenue
-    const kpiDefs = [
+    // 1. Total Leads, 2. Total Conversions, 3. Conversion Rate (CVR), 4. Net EBVMR / Revenue,
+    // 5. AOV, 6. Cancellation Count, 7. Cancellation Rate, 8. Cancelled Revenue
+    const kpiCards = [
         {
-            id: "leads",
+            key: "leads",
             title: "Total Leads",
-            formatter: formatters.number,
             icon: "👥",
-            isReverseGood: false
+            val: currData.leads,
+            prevVal: prevData.leads,
+            formatter: formatters.number,
+            badgeStyle: "default"
         },
         {
-            id: "conversions",
+            key: "conversions",
             title: "Total Conversions",
-            formatter: formatters.number,
             icon: "🎯",
-            isReverseGood: false
-        },
-        {
-            id: "cvr",
-            title: "Conversion Rate (CVR)",
-            formatter: formatters.percent,
-            icon: "⚡",
-            isReverseGood: false
-        },
-        {
-            id: "ebvmr_net",
-            title: "Net EBVMR / Revenue",
-            formatter: formatters.currency,
-            icon: "💎",
-            isReverseGood: false
-        },
-        {
-            id: "aov_overall",
-            title: "Average Order Value (AOV)",
-            formatter: formatters.currency,
-            icon: "🛍️",
-            isReverseGood: false
-        },
-        {
-            id: "cancel_count",
-            title: "Cancellation Count",
+            val: currData.conversions,
+            prevVal: prevData.conversions,
             formatter: formatters.number,
-            icon: "⚠️",
-            isReverseGood: true
+            badgeStyle: "default"
         },
         {
-            id: "cancel_pct",
-            title: "Cancellation Rate (%)",
+            key: "cvr",
+            title: "Conversion Rate (CVR)",
+            icon: "⚡",
+            val: currData.cvr,
+            prevVal: prevData.cvr,
             formatter: formatters.percent,
-            icon: "📉",
-            isReverseGood: true
+            badgeStyle: "percent"
         },
         {
-            id: "cancel_rev",
-            title: "Cancelled Revenue",
+            key: "ebvmr_net",
+            title: "Net EBVMR / Revenue",
+            icon: "💎",
+            val: currData.ebvmr_net,
+            prevVal: prevData.ebvmr_net,
             formatter: formatters.currency,
+            highlight: true,
+            badgeStyle: "default",
+            meta: meta
+        },
+        {
+            key: "aov_overall",
+            title: "Average Order Value (AOV)",
+            icon: "🛒",
+            val: currData.aov_overall,
+            prevVal: prevData.aov_overall,
+            formatter: formatters.currency,
+            badgeStyle: "default"
+        },
+        {
+            key: "cancel_count",
+            title: "Cancellation Count",
+            icon: "⚠️",
+            val: currData.cancel_count,
+            prevVal: prevData.cancel_count,
+            formatter: formatters.number,
+            reverseColor: true,
+            badgeStyle: "default"
+        },
+        {
+            key: "cancel_pct",
+            title: "Cancellation Rate (%)",
+            icon: "📉",
+            val: currData.cancel_pct,
+            prevVal: prevData.cancel_pct,
+            formatter: formatters.percent,
+            reverseColor: true,
+            badgeStyle: "percent"
+        },
+        {
+            key: "cancel_rev",
+            title: "Cancelled Revenue",
             icon: "💸",
-            isReverseGood: true
+            val: currData.cancel_rev,
+            prevVal: prevData.cancel_rev,
+            formatter: formatters.currency,
+            reverseColor: true,
+            badgeStyle: "default"
         }
     ];
 
     let html = "";
-    kpiDefs.forEach(def => {
-        const currVal = currData[def.id] ?? 0;
-        const prevVal = prevData[def.id] ?? 0;
-        
-        const delta = formatters.deltaPercent(currVal, prevVal);
-        let badgeClass = delta.isPositive ? "delta-positive" : "delta-negative";
-        let deltaArrow = delta.isPositive ? "▲" : "▼";
-
-        if (def.isReverseGood) {
-            badgeClass = delta.isPositive ? "delta-negative" : "delta-positive";
+    kpiCards.forEach(card => {
+        const delta = formatters.deltaPercent(card.val || 0, card.prevVal || 0);
+        let deltaClass = delta.isPositive ? "delta-positive" : "delta-negative";
+        if (card.reverseColor) {
+            deltaClass = delta.isPositive ? "delta-negative" : "delta-positive";
         }
-        if (delta.isZero) {
-            badgeClass = "delta-neutral";
-            deltaArrow = "▶";
-        }
+        if (delta.isZero) deltaClass = "";
 
-        let progressHtml = "";
-        if (def.id === "ebvmr_net" && meta && meta.trending_to > 0) {
-            const pctOfTarget = Math.min(100, Math.round((currVal / meta.trending_to) * 100));
-            progressHtml = `
-                <div class="target-progress-container">
-                    <div class="target-label-row">
-                        <span>Trending: ${formatters.currency(meta.trending_to)}</span>
-                        <span>${pctOfTarget}% MTD</span>
-                    </div>
-                    <div class="target-progress-track">
-                        <div class="target-progress-fill" style="width: ${pctOfTarget}%;"></div>
-                    </div>
+        let extraMetaHtml = "";
+        if (card.meta && card.meta.trending_to) {
+            extraMetaHtml = `
+                <div class="kpi-progress-bar">
+                    <div class="kpi-progress-fill" style="width: ${Math.min(100, Math.round((card.val / card.meta.trending_to) * 100))}%;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-muted); margin-top:4px;">
+                    <span>Trending to: ${formatters.currency(card.meta.trending_to)}</span>
+                    <span>Deficit: ${card.meta.deficit_pct}%</span>
                 </div>
             `;
         }
 
         html += `
             <div class="glass-panel kpi-card">
-                <div class="kpi-card-header">
-                    <span class="kpi-title">${def.title}</span>
-                    <div class="kpi-icon-pill">${def.icon}</div>
+                <div class="kpi-header">
+                    <div class="kpi-title-group">
+                        <div class="kpi-icon">${card.icon}</div>
+                        <div class="kpi-title">${card.title}</div>
+                    </div>
+                    <span class="delta-badge ${deltaClass}">
+                        ${delta.isPositive ? '▲' : '▼'} ${delta.text}
+                    </span>
                 </div>
-                <div class="kpi-main-val" title="${formatters.exactCurrency(currVal)}">${def.formatter(currVal)}</div>
-                ${progressHtml}
-                <div class="kpi-footer">
-                    <span class="delta-badge ${badgeClass}">${deltaArrow} ${delta.text} MoM</span>
-                    <span class="kpi-prev-val">Prev: ${def.formatter(prevVal)}</span>
+                <div class="kpi-value ${card.highlight ? 'highlight-val' : ''}">
+                    ${card.formatter(card.val)}
                 </div>
+                <div class="kpi-comparison-sub">
+                    vs. ${formatters.exactCurrency(card.prevVal || 0)} in ${state.compareMonth}
+                </div>
+                ${extraMetaHtml}
             </div>
         `;
     });
@@ -413,94 +506,101 @@ function renderHeroKPIs() {
     container.innerHTML = html;
 }
 
-// Render Side-by-Side Matrix Table
+// Render MoM Complete Matrix Table
 function renderMatrixTable() {
-    const tableBody = document.getElementById("matrixTableBody");
-    if (!tableBody) return;
+    const tbody = document.getElementById("matrixTableBody");
+    if (!tbody) return;
 
-    const currData = RETAIL_DSR_DATA.monthlyData[state.selectedMonth]?.metrics || {};
-    const prevData = RETAIL_DSR_DATA.monthlyData[state.compareMonth]?.metrics || {};
+    const currData = getOverviewMonthly(state.selectedMonth).metrics || {};
+    const prevData = getOverviewMonthly(state.compareMonth).metrics || {};
+
+    const metricsList = RETAIL_DSR_DATA.overviewMetrics || [
+        { id: "leads", name: "Total Leads", format: "number" },
+        { id: "conversions", name: "Total Conversions", format: "number" },
+        { id: "cvr", name: "Conversion Rate (CVR)", format: "percent" },
+        { id: "ebvmr_net", name: "Net EBVMR / Revenue", format: "currency" },
+        { id: "aov_overall", name: "Average Order Value (AOV)", format: "currency" },
+        { id: "cancel_count", name: "Cancellation Count", format: "number" },
+        { id: "cancel_pct", name: "Cancellation Rate (%)", format: "percent" },
+        { id: "cancel_rev", name: "Cancelled Revenue", format: "currency" }
+    ];
 
     let rowsHtml = "";
+    metricsList.forEach(m => {
+        const cVal = currData[m.id] || 0;
+        const pVal = prevData[m.id] || 0;
+        const delta = formatters.deltaPercent(cVal, pVal);
 
-    RETAIL_DSR_DATA.overviewMetrics.forEach(metric => {
-        const currVal = currData[metric.id] ?? 0;
-        const prevVal = prevData[metric.id] ?? 0;
-        const delta = formatters.deltaPercent(currVal, prevVal);
-        
-        let isBadNegative = (metric.id.includes("cancel"));
-        let deltaColor = delta.isPositive ? "var(--color-success)" : "var(--color-danger)";
-        if (isBadNegative) {
-            deltaColor = delta.isPositive ? "var(--color-danger)" : "var(--color-success)";
-        }
-        if (delta.isZero) deltaColor = "var(--color-warning)";
+        let fmtFn = formatters[m.format] || formatters.number;
+        const formattedCurr = fmtFn(cVal);
+        const formattedPrev = fmtFn(pVal);
 
-        let fmt = formatters.number;
-        if (metric.format === "currency") fmt = formatters.currency;
-        if (metric.format === "percent") fmt = formatters.percent;
-        if (metric.format === "decimal") fmt = formatters.decimal;
+        const deltaClass = delta.isPositive ? "delta-positive" : "delta-negative";
 
         rowsHtml += `
             <tr>
-                <td class="metric-name-cell">${metric.name}</td>
-                <td style="font-weight: 700;">${fmt(currVal)}</td>
-                <td style="color: var(--text-secondary);">${fmt(prevVal)}</td>
-                <td style="color: ${deltaColor}; font-weight: 700;">${delta.text}</td>
-                <td style="color: var(--text-muted); font-size: 0.78rem;">${fmt(delta.diff || 0)}</td>
+                <td class="metric-name-cell">
+                    <strong>${m.name}</strong>
+                </td>
+                <td><strong style="color:var(--text-main);">${formattedCurr}</strong></td>
+                <td style="color:var(--text-secondary);">${formattedPrev}</td>
+                <td>
+                    <span class="delta-badge ${deltaClass}">
+                        ${delta.isPositive ? '▲' : '▼'} ${delta.text}
+                    </span>
+                </td>
+                <td style="font-family:'Outfit',sans-serif; color:var(--text-muted); font-size:0.85rem;">
+                    ${delta.diff > 0 ? '+' : ''}${fmtFn(delta.diff)}
+                </td>
             </tr>
         `;
     });
 
-    tableBody.innerHTML = rowsHtml;
+    tbody.innerHTML = rowsHtml;
 }
 
-// Render Daily August Trajectory
+// Render August Daily Trajectory Strip
 function renderDailyAugust() {
     const container = document.getElementById("dailyTrajectoryStrip");
     if (!container || !RETAIL_DSR_DATA.dailyAug) return;
 
     let html = "";
-    RETAIL_DSR_DATA.dailyAug.forEach(dayItem => {
+    RETAIL_DSR_DATA.dailyAug.forEach(d => {
         html += `
-            <div class="daily-block">
-                <div class="daily-date">${dayItem.day}</div>
-                <div class="daily-dow">${dayItem.dow}</div>
-                <div class="daily-val">${formatters.currency(dayItem.revenue)}</div>
-                <div style="font-size: 0.68rem; color: var(--text-muted);">${dayItem.conversions} orders</div>
+            <div class="daily-item">
+                <span class="daily-date">Aug ${d.day}</span>
+                <span class="daily-dow">${d.dow}</span>
+                <span class="daily-rev">${formatters.currency(d.revenue)}</span>
+                <span class="daily-conv">${d.conversions} orders</span>
+                <span class="daily-cvr">${Number(d.cvr).toFixed(1)}% CVR</span>
             </div>
         `;
     });
+
     container.innerHTML = html;
 }
 
-// Render Charts
+// Charts Management
 function renderCharts() {
     renderTrendChart();
-    renderFunnelChart();
     renderChannelMixChart();
-    renderCancellationComparisonChart();
+    renderFunnelChart();
+    renderCancellationChart();
 }
 
-/**
- * Filter months for trend analysis:
- * - "current-fy" (Default): Filter from Apr'26 (Start of FY) to current month (Aug'26)
- * - 3, 6, 12, 25: Slice trailing N months
- */
 function getFilteredMonths() {
-    const allMonths = RETAIL_DSR_DATA.months;
-    
+    const allMonths = RETAIL_DSR_DATA.months || [];
     if (state.timeHorizon === "current-fy") {
-        // Current Financial Year (Apr'26 to Aug'26)
-        const fyStartIndex = allMonths.indexOf("Apr'26");
-        const currentMonthIndex = allMonths.indexOf(state.selectedMonth);
-        if (fyStartIndex !== -1) {
-            const endIndex = currentMonthIndex >= fyStartIndex ? currentMonthIndex + 1 : allMonths.length;
-            return allMonths.slice(fyStartIndex, endIndex);
-        }
-        return ["Apr'26", "May'26", "Jun'26", "July'26", "Aug'26"];
+        // Dynamic: all months from April 2026 onwards
+        const fyMonths = allMonths.filter(m => {
+            const d = parseMonthToDate(m);
+            return d >= new Date(2026, 3, 1); // 2026-04-01 onwards
+        });
+        if (fyMonths.length > 0) return fyMonths;
+        return allMonths.slice(-6);
     }
 
-    const horizon = typeof state.timeHorizon === "number" ? state.timeHorizon : 5;
+    const horizon = typeof state.timeHorizon === "number" ? state.timeHorizon : 6;
     if (horizon >= allMonths.length) return allMonths;
     return allMonths.slice(-horizon);
 }
@@ -514,9 +614,9 @@ function renderTrendChart() {
     }
 
     const months = getFilteredMonths();
-    const revenueData = months.map(m => RETAIL_DSR_DATA.monthlyData[m]?.metrics?.ebvmr_net || 0);
-    const conversionsData = months.map(m => RETAIL_DSR_DATA.monthlyData[m]?.metrics?.conversions || 0);
-    const leadsData = months.map(m => RETAIL_DSR_DATA.monthlyData[m]?.metrics?.leads || 0);
+    const revenueData = months.map(m => getOverviewMonthly(m).metrics?.ebvmr_net || 0);
+    const conversionsData = months.map(m => getOverviewMonthly(m).metrics?.conversions || 0);
+    const leadsData = months.map(m => getOverviewMonthly(m).metrics?.leads || 0);
 
     const isLight = state.theme === "light-ice";
     const gridColor = isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
@@ -615,8 +715,8 @@ function renderFunnelChart() {
     }
 
     const months = getFilteredMonths();
-    const cvrData = months.map(m => RETAIL_DSR_DATA.monthlyData[m]?.metrics?.cvr || 0);
-    const arpuData = months.map(m => RETAIL_DSR_DATA.monthlyData[m]?.metrics?.arpu_blended || 0);
+    const cvrData = months.map(m => getOverviewMonthly(m).metrics?.cvr || 0);
+    const arpuData = months.map(m => getOverviewMonthly(m).metrics?.arpu_blended || 0);
 
     const isLight = state.theme === "light-ice";
     const gridColor = isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
@@ -684,12 +784,23 @@ function renderChannelMixChart() {
     }
 
     const m = state.selectedMonth;
-    const channels = RETAIL_DSR_DATA.channels;
-    
-    // Explicit channel labels: Walk-in, Video Call Leads, App Leads, Store Calls
-    const labels = ["Walk-in", "Video Call Leads", "App Leads", "Store Calls"];
-    const channelKeys = ["walkin", "popin", "app_lead", "store_calls"];
-    const data = channelKeys.map(k => channels[k]?.monthly[m]?.revenue || 0);
+    const channels = [
+        { key: "walkin", label: "Walk-in", color: "#00e5ff" },
+        { key: "popin", label: "Video Call Leads", color: "#0077ff" },
+        { key: "app_lead", label: "App Leads", color: "#38bdf8" },
+        { key: "is_leads", label: "IS Leads", color: "#818cf8" },
+        { key: "store_calls", label: "Store Calls", color: "#10b981" }
+    ];
+
+    const labels = channels.map(c => c.label);
+    const data = channels.map(c => {
+        const ch = RETAIL_DSR_DATA.channels?.[c.key];
+        return getChannelMonthly(ch, m).revenue || 0;
+    });
+    const colors = channels.map(c => c.color);
+
+    const isLight = state.theme === "light-ice";
+    const textColor = isLight ? "#475569" : "#94a3b8";
 
     state.charts.channelMix = new Chart(ctx, {
         type: "doughnut",
@@ -697,13 +808,9 @@ function renderChannelMixChart() {
             labels: labels,
             datasets: [{
                 data: data,
-                backgroundColor: [
-                    "#0077ff", // Walk-in (Cobalt)
-                    "#00e5ff", // Video Call Leads (Cyan)
-                    "#38bdf8", // App Leads (Sky Blue)
-                    "#818cf8"  // Store Calls (Indigo)
-                ],
-                borderWidth: 0
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: isLight ? "#ffffff" : "#0d1b2a"
             }]
         },
         options: {
@@ -712,11 +819,7 @@ function renderChannelMixChart() {
             plugins: {
                 legend: {
                     position: "bottom",
-                    labels: { 
-                        color: state.theme === "light-ice" ? "#475569" : "#94a3b8", 
-                        boxWidth: 12,
-                        font: { family: "Outfit", size: 12, weight: 600 }
-                    }
+                    labels: { color: textColor, font: { family: "Outfit", size: 11 }, padding: 12 }
                 },
                 tooltip: {
                     callbacks: {
@@ -729,7 +832,7 @@ function renderChannelMixChart() {
     });
 }
 
-function renderCancellationComparisonChart() {
+function renderCancellationChart() {
     const ctx = document.getElementById("cancelChartCanvas")?.getContext("2d");
     if (!ctx) return;
 
@@ -738,8 +841,8 @@ function renderCancellationComparisonChart() {
     }
 
     const months = getFilteredMonths();
-    const rentalCancelVal = months.map(m => RETAIL_DSR_DATA.monthlyData[m]?.metrics?.rental_cancel_val || 0);
-    const sellingCancelVal = months.map(m => RETAIL_DSR_DATA.monthlyData[m]?.metrics?.selling_cancel_val || 0);
+    const rentalCancelVal = months.map(m => getOverviewMonthly(m).metrics?.rental_cancel_val || 0);
+    const sellingCancelVal = months.map(m => getOverviewMonthly(m).metrics?.selling_cancel_val || 0);
 
     const isLight = state.theme === "light-ice";
     const gridColor = isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
@@ -798,11 +901,11 @@ function renderCocoStores() {
     
     const storesList = Object.values(RETAIL_DSR_DATA.cocoStores);
 
-    // Build Store Cards (Displaying the 4 exact KPIs: Total Leads, Total Conversions, CVR %, EBVMR_with_vas)
+    // Build Store Cards
     let cardsHtml = "";
     storesList.forEach(store => {
-        const curr = store.monthly[m] || { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
-        const prev = store.monthly[prevM] || { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
+        const curr = getStoreMonthly(store, m);
+        const prev = getStoreMonthly(store, prevM);
 
         const deltaLeads = formatters.deltaPercent(curr.leads, prev.leads);
         const deltaConv = formatters.deltaPercent(curr.conversions, prev.conversions);
@@ -865,17 +968,17 @@ function renderCocoStores() {
     // Leaderboard Ranking (Sorted by EBVMR_with_vas NET)
     if (leaderboardContainer) {
         const sortedStores = [...storesList].sort((a, b) => {
-            const revA = a.monthly[m]?.ebvmr_net || 0;
-            const revB = b.monthly[m]?.ebvmr_net || 0;
+            const revA = getStoreMonthly(a, m).ebvmr_net || 0;
+            const revB = getStoreMonthly(b, m).ebvmr_net || 0;
             return revB - revA;
         });
 
-        const topRevenue = sortedStores[0]?.monthly[m]?.ebvmr_net || 1;
+        const topRevenue = getStoreMonthly(sortedStores[0], m).ebvmr_net || 1;
 
         let rankHtml = "";
         sortedStores.forEach((st, idx) => {
             const rank = idx + 1;
-            const curr = st.monthly[m] || { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
+            const curr = getStoreMonthly(st, m);
             const pctOfTop = Math.min(100, Math.round((curr.ebvmr_net / topRevenue) * 100));
 
             let rankClass = `rank-${rank}`;
@@ -928,9 +1031,9 @@ function renderCocoVisualizations(storesList, m) {
     const textColor = isLight ? "#475569" : "#94a3b8";
 
     const labels = storesList.map(s => s.name);
-    const revenueData = storesList.map(s => s.monthly[m]?.ebvmr_net || 0);
-    const cvrData = storesList.map(s => s.monthly[m]?.cvr || 0);
-    const convData = storesList.map(s => s.monthly[m]?.conversions || 0);
+    const revenueData = storesList.map(s => getStoreMonthly(s, m).ebvmr_net || 0);
+    const cvrData = storesList.map(s => getStoreMonthly(s, m).cvr || 0);
+    const convData = storesList.map(s => getStoreMonthly(s, m).conversions || 0);
 
     // 1. Revenue Comparison Horizontal Bar
     state.charts.cocoBar = new Chart(barCtx, {
@@ -1026,7 +1129,6 @@ function renderCocoVisualizations(storesList, m) {
     });
 }
 
-
 // Leads Analysis — 5 channel cards + comparison charts + leaderboard
 function renderChannels() {
     const container = document.getElementById("channelsGrid");
@@ -1047,8 +1149,8 @@ function renderChannels() {
 
     channelDefs.forEach(chDef => {
         const ch = RETAIL_DSR_DATA.channels?.[chDef.key];
-        const curr = ch?.monthly?.[m]  || { leads: 0, conversions: 0, cvr: 0, revenue: 0, arpu: 0 };
-        const prev = ch?.monthly?.[prevM] || { leads: 0, conversions: 0, cvr: 0, revenue: 0 };
+        const curr = getChannelMonthly(ch, m);
+        const prev = getChannelMonthly(ch, prevM);
 
         const deltaLeads = formatters.deltaPercent(curr.leads, prev.leads);
         const deltaConv  = formatters.deltaPercent(curr.conversions, prev.conversions);
@@ -1117,22 +1219,34 @@ function renderChannels() {
 
     container.innerHTML = html;
 
-    // Render the 3 comparison charts + leaderboard
-    renderLeadsComparisonCharts(channelDefs, m, prevM);
+    // Render the comparison charts + leaderboard
+    renderLeadsComparisonCharts(channelDefs, m);
     renderChannelLeaderboard(channelDefs, m);
 }
 
-function renderLeadsComparisonCharts(channelDefs, m, prevM) {
+function renderLeadsComparisonCharts(channelDefs, m) {
     const isLight = state.theme === "light-ice";
     const gridColor = isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
     const textColor = isLight ? "#475569" : "#94a3b8";
 
     const labels  = channelDefs.map(c => c.label);
     const colors  = channelDefs.map(c => c.color);
-    const leadsD  = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.leads || 0);
-    const convD   = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.conversions || 0);
-    const cvrD    = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.cvr || 0);
-    const revD    = channelDefs.map(c => RETAIL_DSR_DATA.channels?.[c.key]?.monthly?.[m]?.revenue || 0);
+    const leadsD  = channelDefs.map(c => {
+        const ch = RETAIL_DSR_DATA.channels?.[c.key];
+        return getChannelMonthly(ch, m).leads || 0;
+    });
+    const convD   = channelDefs.map(c => {
+        const ch = RETAIL_DSR_DATA.channels?.[c.key];
+        return getChannelMonthly(ch, m).conversions || 0;
+    });
+    const cvrD    = channelDefs.map(c => {
+        const ch = RETAIL_DSR_DATA.channels?.[c.key];
+        return getChannelMonthly(ch, m).cvr || 0;
+    });
+    const revD    = channelDefs.map(c => {
+        const ch = RETAIL_DSR_DATA.channels?.[c.key];
+        return getChannelMonthly(ch, m).revenue || 0;
+    });
 
     // 1. Leads vs Conversions grouped bar
     const lvcCtx = document.getElementById("leadsVsConvCanvas")?.getContext("2d");
@@ -1240,18 +1354,17 @@ function renderChannelLeaderboard(channelDefs, m) {
     if (!container) return;
 
     const ranked = [...channelDefs].sort((a, b) => {
-        const rA = RETAIL_DSR_DATA.channels?.[a.key]?.monthly?.[m]?.revenue || 0;
-        const rB = RETAIL_DSR_DATA.channels?.[b.key]?.monthly?.[m]?.revenue || 0;
+        const rA = getChannelMonthly(RETAIL_DSR_DATA.channels?.[a.key], m).revenue || 0;
+        const rB = getChannelMonthly(RETAIL_DSR_DATA.channels?.[b.key], m).revenue || 0;
         return rB - rA;
     });
 
-    const topRev = RETAIL_DSR_DATA.channels?.[ranked[0]?.key]?.monthly?.[m]?.revenue || 1;
-
+    const topRev = getChannelMonthly(RETAIL_DSR_DATA.channels?.[ranked[0]?.key], m).revenue || 1;
     const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
 
     let html = "";
     ranked.forEach((ch, idx) => {
-        const data = RETAIL_DSR_DATA.channels?.[ch.key]?.monthly?.[m] || {};
+        const data = getChannelMonthly(RETAIL_DSR_DATA.channels?.[ch.key], m);
         const rev  = data.revenue || 0;
         const cvr  = data.cvr || 0;
         const leads = data.leads || 0;
@@ -1281,19 +1394,18 @@ function renderChannelLeaderboard(channelDefs, m) {
     container.innerHTML = html;
 }
 
-
 // Render Categories & Products
 function renderCategories() {
     const container = document.getElementById("categoriesGrid");
-    if (!container) return;
+    if (!container || !RETAIL_DSR_DATA.categories) return;
 
     const m = state.selectedMonth;
     const prevM = state.compareMonth;
     let html = "";
 
     Object.values(RETAIL_DSR_DATA.categories).forEach(cat => {
-        const curr = cat.monthly[m] || { sales: 0, revenue: 0, arpu: 0, ppu: 0, mix_pct: 0 };
-        const prev = cat.monthly[prevM] || { sales: 0, revenue: 0, arpu: 0, ppu: 0, mix_pct: 0 };
+        const curr = cat.monthly?.[m] || { sales: 0, revenue: 0, arpu: 0, ppu: 0, mix_pct: 0 };
+        const prev = cat.monthly?.[prevM] || { sales: 0, revenue: 0, arpu: 0, ppu: 0, mix_pct: 0 };
         const delta = formatters.deltaPercent(curr.revenue, prev.revenue);
 
         html += `
@@ -1318,57 +1430,58 @@ function renderCategories() {
         `;
     });
 
-    Object.values(RETAIL_DSR_DATA.subCategories).forEach(sub => {
-        const curr = sub.monthly[m] || { sales: 0, revenue: 0, aov: 0, ppu: 0 };
-        const prev = sub.monthly[prevM] || { sales: 0, revenue: 0 };
-        const delta = formatters.deltaPercent(curr.revenue, prev.revenue);
+    if (RETAIL_DSR_DATA.subCategories) {
+        Object.values(RETAIL_DSR_DATA.subCategories).forEach(sub => {
+            const curr = sub.monthly?.[m] || { sales: 0, revenue: 0, aov: 0, ppu: 0 };
+            const prev = sub.monthly?.[prevM] || { sales: 0, revenue: 0 };
+            const delta = formatters.deltaPercent(curr.revenue, prev.revenue);
 
-        html += `
-            <div class="glass-panel sub-item-card" style="background: var(--glass-bg-subtle);">
-                <div class="item-header">
-                    <span class="item-name">📦 ${sub.name}</span>
-                    <span class="delta-badge ${delta.isPositive ? 'delta-positive' : 'delta-negative'}">${delta.text}</span>
+            html += `
+                <div class="glass-panel sub-item-card" style="background: var(--glass-bg-subtle);">
+                    <div class="item-header">
+                        <span class="item-name">📦 ${sub.name}</span>
+                        <span class="delta-badge ${delta.isPositive ? 'delta-positive' : 'delta-negative'}">${delta.text}</span>
+                    </div>
+                    <div class="item-stat-row">
+                        <span class="item-stat-label">Sub-category Revenue</span>
+                        <span class="item-stat-val">${formatters.currency(curr.revenue)}</span>
+                    </div>
+                    <div class="item-stat-row">
+                        <span class="item-stat-label">Sales Orders / AOV</span>
+                        <span class="item-stat-val">${formatters.number(curr.sales)} / ${formatters.currency(curr.aov)}</span>
+                    </div>
                 </div>
-                <div class="item-stat-row">
-                    <span class="item-stat-label">Sub-category Revenue</span>
-                    <span class="item-stat-val">${formatters.currency(curr.revenue)}</span>
-                </div>
-                <div class="item-stat-row">
-                    <span class="item-stat-label">Sales Orders / AOV</span>
-                    <span class="item-stat-val">${formatters.number(curr.sales)} / ${formatters.currency(curr.aov)}</span>
-                </div>
-            </div>
-        `;
-    });
+            `;
+        });
+    }
 
     container.innerHTML = html;
 }
 
 function updateChartThemes() {
     renderCharts();
+    if (RETAIL_DSR_DATA.cocoStores) {
+        renderCocoVisualizations(Object.values(RETAIL_DSR_DATA.cocoStores), state.selectedMonth);
+    }
 }
 
-// Export CSV Feature
+// CSV Export Utility
 function exportDashboardCSV() {
-    const months = RETAIL_DSR_DATA.months;
-    const metrics = RETAIL_DSR_DATA.overviewMetrics;
-    
-    let csvContent = "Metric," + months.join(",") + "\n";
+    const months = RETAIL_DSR_DATA.months || [];
+    let csv = "KPI Metric," + months.join(",") + "\n";
 
+    const metrics = RETAIL_DSR_DATA.overviewMetrics || [];
     metrics.forEach(met => {
-        let row = `"${met.name}"`;
-        months.forEach(m => {
-            const v = RETAIL_DSR_DATA.monthlyData[m]?.metrics?.[met.id] ?? 0;
-            row += `,${v}`;
-        });
-        csvContent += row + "\n";
+        const rowVals = months.map(m => getOverviewMonthly(m).metrics?.[met.id] || 0);
+        csv += `"${met.name}",` + rowVals.join(",") + "\n";
     });
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `V2_COCO_STORES_MASTER_DASHBOARD_${state.selectedMonth}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `V2_COCO_STORES_DSR_${state.selectedMonth}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
