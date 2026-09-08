@@ -51,7 +51,7 @@ function getOverviewMonthly(m) {
 }
 
 function getStoreMonthly(store, m) {
-    if (!store || !store.monthly) return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0, isFallback: false };
+    if (!store || !store.monthly) return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0, monthLabel: m, isFallback: false };
     
     // 1. Direct match with non-zero check
     if (store.monthly[m] && (store.monthly[m].leads > 0 || store.monthly[m].conversions > 0 || store.monthly[m].ebvmr_net > 0)) {
@@ -80,6 +80,24 @@ function getStoreMonthly(store, m) {
 
     return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0, monthLabel: m, isFallback: false };
 }
+
+function getStorePreviousMonthly(store, currMonthLabel) {
+    if (!store || !store.monthly) return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
+    const availableMonths = Object.keys(store.monthly).filter(k => {
+        const d = store.monthly[k];
+        return d && (d.leads > 0 || d.conversions > 0 || d.ebvmr_net > 0);
+    });
+    if (availableMonths.length > 1) {
+        availableMonths.sort((a, b) => parseMonthToDate(b) - parseMonthToDate(a));
+        const currIdx = availableMonths.findIndex(k => normalizeMonth(k) === normalizeMonth(currMonthLabel));
+        if (currIdx !== -1 && currIdx + 1 < availableMonths.length) {
+            const prevMonth = availableMonths[currIdx + 1];
+            return { ...store.monthly[prevMonth], monthLabel: prevMonth };
+        }
+    }
+    return { leads: 0, conversions: 0, cvr: 0, ebvmr_net: 0 };
+}
+
 
 function getChannelMonthly(ch, m) {
     if (!ch || !ch.monthly) return { leads: 0, conversions: 0, cvr: 0, revenue: 0, arpu: 0, sales: 0 };
@@ -956,7 +974,8 @@ function renderCocoStores() {
     let cardsHtml = "";
     storesList.forEach(store => {
         const curr = getStoreMonthly(store, m);
-        const prev = getStoreMonthly(store, prevM);
+        const prev = curr.isFallback ? getStorePreviousMonthly(store, curr.monthLabel) : getStoreMonthly(store, prevM);
+
 
         const deltaLeads = formatters.deltaPercent(curr.leads, prev.leads);
         const deltaConv = formatters.deltaPercent(curr.conversions, prev.conversions);
