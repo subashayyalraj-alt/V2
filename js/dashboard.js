@@ -336,10 +336,24 @@ function initTabs() {
                 pane.style.display = pane.id === `tabPane-${state.activeTab}` ? "block" : "none";
             });
 
+            // Re-render the active tab components to ensure canvas & DOM elements paint with full width
+            if (state.activeTab === "stores") {
+                renderCocoStores();
+            } else if (state.activeTab === "channels") {
+                renderChannels();
+            } else if (state.activeTab === "categories") {
+                renderCategories();
+            } else {
+                renderHeroKPIs();
+                renderMatrixTable();
+                renderCharts();
+            }
+
             window.dispatchEvent(new Event('resize'));
         });
     });
 }
+
 
 function initQuickFilters() {
     const pills = document.querySelectorAll(".horizon-pill");
