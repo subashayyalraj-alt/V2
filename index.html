@@ -111,20 +111,21 @@
                 <!-- Injected dynamically via JavaScript -->
             </section>
 
-            <!-- August MTD Daily Trajectory Strip -->
+            <!-- Dynamic MTD Daily Trajectory Strip -->
             <section class="glass-panel" style="padding: 1.25rem; margin-top: 1.5rem;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>📅</span> August 2026 MTD Daily Revenue & Conversion Trajectory (Day 1 to 17)
+                    <div id="dailyTrajectoryHeaderTitle" style="font-family: 'Outfit', sans-serif; font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>📅</span> <span id="dailyTrajectoryMonthLabel">August 2026</span> MTD Daily Revenue & Conversion Trajectory
                     </div>
-                    <span style="font-size: 0.75rem; color: var(--text-secondary); background: rgba(0,229,255,0.1); padding: 3px 10px; border-radius: 99px; border: 1px solid rgba(0,229,255,0.2);">
+                    <span id="dailyTrajectoryRunRateBadge" style="font-size: 0.75rem; color: var(--text-secondary); background: rgba(0,229,255,0.1); padding: 3px 10px; border-radius: 99px; border: 1px solid rgba(0,229,255,0.2);">
                         MTD Daily Run-Rate: ₹ 2.15 L/day
                     </span>
                 </div>
                 <div id="dailyTrajectoryStrip" class="daily-strip">
-                    <!-- Daily blocks injected via JS -->
+                    <!-- Daily blocks injected dynamically via JS -->
                 </div>
             </section>
+
 
             <!-- Charts Split: Financial Year Trend Line + Channel Doughnut -->
             <div class="charts-split-grid" style="margin-top: 1.5rem;">
