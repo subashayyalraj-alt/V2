@@ -184,8 +184,10 @@ function loadLiveData() {
 
             // Merge live data into RETAIL_DSR_DATA
             RETAIL_DSR_DATA.monthlyData = liveData.monthlyData || RETAIL_DSR_DATA.monthlyData;
+            RETAIL_DSR_DATA.dailyData   = liveData.dailyData   || RETAIL_DSR_DATA.dailyData;
             RETAIL_DSR_DATA.channels    = liveData.channels    || RETAIL_DSR_DATA.channels;
             RETAIL_DSR_DATA.cocoStores  = liveData.cocoStores  || RETAIL_DSR_DATA.cocoStores;
+
 
             // Collect and sort all months chronologically
             const allMonthsSet = new Set();
@@ -659,10 +661,10 @@ function renderDailyTrajectory() {
         const dObj = parseMonthToDate(currentMonth);
         const normM = normalizeMonth(currentMonth);
         
-        // Determine days elapsed till date for this month
+        // Determine days elapsed till date for this month (e.g. 17th for Sep MTD)
         let daysElapsed = 17;
         if (normM === "Sep'26") {
-            daysElapsed = 8;
+            daysElapsed = 17;
         } else if (normM === "Aug'26") {
             daysElapsed = 17;
         } else if (normM === "Jul'26" || normM === "July'26") {
@@ -670,8 +672,9 @@ function renderDailyTrajectory() {
         } else if (normM === "Jun'26" || normM === "June'26") {
             daysElapsed = 30;
         } else {
-            daysElapsed = 15;
+            daysElapsed = 17;
         }
+
 
         const avgDailyRev = totalRev > 0 ? (totalRev / daysElapsed) : 0;
         const avgDailyConv = totalConv > 0 ? Math.round(totalConv / daysElapsed) : 0;
