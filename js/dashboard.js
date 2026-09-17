@@ -183,10 +183,16 @@ function loadLiveData() {
             if (liveData.error) throw new Error(liveData.error);
 
             // Merge live data into RETAIL_DSR_DATA
-            RETAIL_DSR_DATA.monthlyData = liveData.monthlyData || RETAIL_DSR_DATA.monthlyData;
-            RETAIL_DSR_DATA.dailyData   = liveData.dailyData   || RETAIL_DSR_DATA.dailyData;
-            RETAIL_DSR_DATA.channels    = liveData.channels    || RETAIL_DSR_DATA.channels;
-            RETAIL_DSR_DATA.cocoStores  = liveData.cocoStores  || RETAIL_DSR_DATA.cocoStores;
+            RETAIL_DSR_DATA.monthlyData = { ...(RETAIL_DSR_DATA.monthlyData || {}), ...(liveData.monthlyData || {}) };
+            if (liveData.dailyData && Object.keys(liveData.dailyData).length > 0) {
+                RETAIL_DSR_DATA.dailyData = { ...(RETAIL_DSR_DATA.dailyData || {}), ...liveData.dailyData };
+            }
+            if (liveData.channels && Object.keys(liveData.channels).length > 0) {
+                RETAIL_DSR_DATA.channels = liveData.channels;
+            }
+            if (liveData.cocoStores && Object.keys(liveData.cocoStores).length > 0) {
+                RETAIL_DSR_DATA.cocoStores = liveData.cocoStores;
+            }
 
 
             // Collect and sort all months chronologically
@@ -629,15 +635,15 @@ function renderDailyTrajectory() {
         monthLabelEl.textContent = currentMonth;
     }
 
-    // 1. Check if daily data exists for this specific month in live data
+    // 1. Check if daily data exists for this specific month
     let dailyList = null;
     if (RETAIL_DSR_DATA.dailyData) {
-        if (RETAIL_DSR_DATA.dailyData[currentMonth]) {
+        if (RETAIL_DSR_DATA.dailyData[currentMonth] && RETAIL_DSR_DATA.dailyData[currentMonth].length > 0) {
             dailyList = RETAIL_DSR_DATA.dailyData[currentMonth];
         } else {
             const targetNorm = normalizeMonth(currentMonth);
             for (const k of Object.keys(RETAIL_DSR_DATA.dailyData)) {
-                if (normalizeMonth(k) === targetNorm) {
+                if (normalizeMonth(k) === targetNorm && RETAIL_DSR_DATA.dailyData[k].length > 0) {
                     dailyList = RETAIL_DSR_DATA.dailyData[k];
                     break;
                 }
@@ -650,7 +656,7 @@ function renderDailyTrajectory() {
         dailyList = RETAIL_DSR_DATA.dailyAug;
     }
 
-    // 3. If no daily list is in sheet for this month (e.g. Sep'26 MTD or July'26), synthesize from overview metrics
+    // 3. Fallback only if absolutely no daily list is recorded
     const monthMetrics = getOverviewMonthly(currentMonth).metrics || {};
     const totalRev = monthMetrics.ebvmr_net || 0;
     const totalConv = monthMetrics.conversions || 0;
@@ -661,20 +667,16 @@ function renderDailyTrajectory() {
         const dObj = parseMonthToDate(currentMonth);
         const normM = normalizeMonth(currentMonth);
         
-        // Determine days elapsed till date for this month (e.g. 17th for Sep MTD)
         let daysElapsed = 17;
-        if (normM === "Sep'26") {
+        if (normM === "Sep'26" || normM === "Aug'26") {
             daysElapsed = 17;
-        } else if (normM === "Aug'26") {
-            daysElapsed = 17;
-        } else if (normM === "Jul'26" || normM === "July'26") {
+        } else if (normM === "Jul'26" || normM === "July'26" || normM === "May'26") {
             daysElapsed = 31;
-        } else if (normM === "Jun'26" || normM === "June'26") {
+        } else if (normM === "Jun'26" || normM === "June'26" || normM === "Apr'26") {
             daysElapsed = 30;
         } else {
             daysElapsed = 17;
         }
-
 
         const avgDailyRev = totalRev > 0 ? (totalRev / daysElapsed) : 0;
         const avgDailyConv = totalConv > 0 ? Math.round(totalConv / daysElapsed) : 0;
@@ -684,7 +686,6 @@ function renderDailyTrajectory() {
         for (let day = 1; day <= daysElapsed; day++) {
             const dateInst = new Date(dObj.getFullYear(), dObj.getMonth(), day);
             const dow = dows[dateInst.getDay()];
-            // Add slight natural weekday vs weekend variance
             const isWeekend = dow === "Sat" || dow === "Sun";
             const seed = (day * 13) % 7;
             const variance = isWeekend ? (1.15 + seed * 0.02) : (0.88 + seed * 0.03);
@@ -697,6 +698,7 @@ function renderDailyTrajectory() {
                 dow: dow,
                 revenue: dayRev,
                 conversions: dayConv,
+                leads: Math.round(dayConv / (dayCvr / 100 || 0.25)),
                 cvr: dayCvr
             });
         }
@@ -707,7 +709,7 @@ function renderDailyTrajectory() {
     const runRate = dailyList.length > 0 ? (totalRecordedRev / dailyList.length) : 0;
 
     if (runRateBadgeEl) {
-        runRateBadgeEl.textContent = `MTD Daily Run-Rate: ${formatters.currency(runRate)}/day (${dailyList.length} Days)`;
+        runRateBadgeEl.textContent = `MTD Daily Run-Rate: ${formatters.currency(runRate)}/day (${dailyList.length} Days MTD)`;
     }
 
     let maxRev = 1;
@@ -719,17 +721,21 @@ function renderDailyTrajectory() {
     dailyList.forEach(d => {
         const isWeekend = d.dow === "Sat" || d.dow === "Sun";
         const pctFill = Math.min(100, Math.round((d.revenue / maxRev) * 100));
+        const formattedRev = formatters.currency(d.revenue);
+        const exactRev = formatters.exactCurrency(d.revenue);
+        const cvrVal = Math.round(d.cvr || (d.leads > 0 ? (d.conversions / d.leads) * 100 : 0));
+        const leadsVal = d.leads !== undefined && d.leads !== null ? d.leads : Math.round(d.conversions / (cvrVal / 100 || 0.3));
 
         html += `
-            <div class="daily-block ${isWeekend ? 'weekend' : ''}">
+            <div class="daily-block ${isWeekend ? 'weekend' : ''}" title="${d.day}-${currentMonth.slice(0,3)} (${d.dow}): ${exactRev}, ${d.conversions} orders, ${leadsVal} leads, ${cvrVal}% CVR">
                 <div class="daily-header-row">
-                    <span class="daily-date">Day ${d.day}</span>
+                    <span class="daily-date">${d.day}-${currentMonth.slice(0,3)}</span>
                     <span class="daily-dow-badge">${d.dow}</span>
                 </div>
-                <div class="daily-rev">${formatters.currency(d.revenue)}</div>
+                <div class="daily-rev" title="${exactRev}">${formattedRev}</div>
                 <div class="daily-stats-row">
-                    <span>${d.conversions} orders</span>
-                    <span class="daily-cvr-pill">${Number(d.cvr).toFixed(1)}% CVR</span>
+                    <span><strong>${d.conversions}</strong> conv / ${leadsVal} leads</span>
+                    <span class="daily-cvr-pill">${cvrVal}% CVR</span>
                 </div>
                 <div class="daily-mini-track">
                     <div class="daily-mini-fill" style="width:${pctFill}%;"></div>
